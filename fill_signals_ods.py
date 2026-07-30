@@ -635,37 +635,60 @@ def fill_ods(ods_path: Path, create_backup: bool = True) -> Dict[str, object]:
     return stats
 
 
-def print_missing_modules(stats: Dict[str, object]) -> None:
+def print_missing_modules(stats: Dict[str, object], structured_output: bool = False) -> None:
     missing_modules = stats.get("missing_modules", [])
     cabinet_display_names = stats.get("cabinet_display_names", {})
 
+    if structured_output:
+        print(f"NEW_MODULES_COUNT: {len(missing_modules)}")
+        if missing_modules:
+            print("Список новых модулей:")
+            for file_key, basket, module_slot in missing_modules:
+                cabinet_name = cabinet_display_names.get(file_key, file_key)
+                module_name = format_module_name(basket, module_slot)
+                print(f"NEW_MODULE: {cabinet_name} | {module_name}")
+        return
+
     if not missing_modules:
-        print("NEW_MODULES_COUNT: 0")
         print("Новых модулей в XLSX, отсутствующих в ODS: нет")
         return
 
-    print(f"NEW_MODULES_COUNT: {len(missing_modules)}")
     print(f"Новых модулей в XLSX, отсутствующих в ODS: {len(missing_modules)}")
     print("Список новых модулей:")
     for file_key, basket, module_slot in missing_modules:
         cabinet_name = cabinet_display_names.get(file_key, file_key)
         module_name = format_module_name(basket, module_slot)
-        print(f"NEW_MODULE: {cabinet_name} | {module_name}")
         print(f"  - {cabinet_name}: {module_name}")
 
 
-def print_duplicate_details(stats: Dict[str, object]) -> None:
+def print_duplicate_details(stats: Dict[str, object], structured_output: bool = False) -> None:
     duplicate_details = stats.get("duplicate_details", {})
 
+    if structured_output:
+        print(f"DUPLICATE_KEYS_COUNT: {len(duplicate_details)}")
+        if duplicate_details:
+            print("Список дубликатов:")
+            for detail in duplicate_details.values():
+                cabinet_name = detail.get("cabinet_name", detail.get("file_key", ""))
+                basket = str(detail.get("basket", ""))
+                module_slot = str(detail.get("module_slot", ""))
+                module_name = format_module_name(basket, module_slot)
+                channel = detail.get("channel", "")
+                signal_kind = detail.get("signal_kind", "")
+                rows = detail.get("rows", [])
+                rows_text = ", ".join(str(x) for x in rows)
+                print(
+                    f"DUPLICATE_KEY: {cabinet_name} | {module_name} | "
+                    f"{channel} | {signal_kind} | {rows_text}"
+                )
+        return
+
     if not duplicate_details:
-        print("DUPLICATE_KEYS_COUNT: 0")
         print("Дубликатов ключей в XLSX: нет")
         return
 
-    print(f"DUPLICATE_KEYS_COUNT: {len(duplicate_details)}")
     print(f"Дубликатов ключей в XLSX: {len(duplicate_details)}")
     print("Список дубликатов:")
-
     for detail in duplicate_details.values():
         cabinet_name = detail.get("cabinet_name", detail.get("file_key", ""))
         basket = str(detail.get("basket", ""))
@@ -675,15 +698,21 @@ def print_duplicate_details(stats: Dict[str, object]) -> None:
         signal_kind = detail.get("signal_kind", "")
         rows = detail.get("rows", [])
         rows_text = ", ".join(str(x) for x in rows)
-
-        print(f"DUPLICATE_KEY: {cabinet_name} | {module_name} | {channel} | {signal_kind} | {rows_text}")
-        print(f"  - {cabinet_name}: {module_name}, канал {channel}, тип {signal_kind}, строки XLSX: {rows_text}")
+        print(
+            f"  - {cabinet_name}: {module_name}, канал {channel}, "
+            f"тип {signal_kind}, строки XLSX: {rows_text}"
+        )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Заполнение листа 'Сигналы' в ODS по XLSX-файлам с листом 'Печать'.")
     parser.add_argument("ods_path", help="Путь к ODS-файлу")
     parser.add_argument("--no-backup", action="store_true", help="Не создавать резервную копию")
+    parser.add_argument(
+        "--structured-output",
+        action="store_true",
+        help="Выводить служебные маркеры для PowerShell-оболочки",
+    )
     args = parser.parse_args()
 
     ods_path = Path(args.ods_path).resolve()
@@ -696,8 +725,8 @@ def main() -> int:
 
     print("Готово.")
     print(f"ODS: {ods_path}")
-    print_missing_modules(stats)
-    print_duplicate_details(stats)
+    print_missing_modules(stats, structured_output=args.structured_output)
+    print_duplicate_details(stats, structured_output=args.structured_output)
     print(f"Модулей в XLSX: {stats.get('xlsx_modules_total', 0)}")
     print(f"Модулей в ODS: {stats.get('ods_modules_total', 0)}")
     print(f"Заполнено строк: {stats.get('rows_filled', 0)}")

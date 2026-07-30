@@ -56,14 +56,17 @@
 - Python 3;
 - библиотеки `odfpy` и `openpyxl`.
 
-PowerShell-оболочка может предложить установить Python через `winget`,
-а отсутствующие Python-библиотеки — через `pip`.
+При первом запуске оболочка может предложить автоматически установить
+Python через `winget`, а затем установить отсутствующие библиотеки через `pip`.
+После успешной установки выполнение продолжается в том же окне — перезапуск
+обычно не требуется.
 
 ## Структура проекта
 
 ```text
 zapolnyator-3000/
 ├── fill_signals_ods.py
+├── run_zapolnyator_3000.cmd
 ├── run_fill_signals_ods.ps1
 ├── requirements.txt
 ├── .gitignore
@@ -75,14 +78,26 @@ zapolnyator-3000/
 1. Поместите в один рабочий каталог:
 
    - `fill_signals_ods.py`;
+   - `run_zapolnyator_3000.cmd`;
    - `run_fill_signals_ods.ps1`;
    - целевой ODS-файл;
    - исходные XLSX-файлы.
 
-2. Запустите PowerShell-сценарий:
+2. Рекомендуемый способ запуска на Windows — двойной щелчок по файлу:
+
+```text
+run_zapolnyator_3000.cmd
+```
+
+CMD-оболочка запускает PowerShell только для текущего процесса с политикой
+`Bypass`, не изменяет постоянные системные настройки и оставляет окно открытым
+после завершения или ошибки. Это рекомендуемый вариант и для чистой Windows,
+на которой выполнение `.ps1` по умолчанию может быть заблокировано.
+
+Альтернативный запуск из PowerShell:
 
 ```powershell
-.\run_fill_signals_ods.ps1
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ".\run_fill_signals_ods.ps1"
 ```
 
 3. Выберите номер ODS-файла из предложенного списка.
