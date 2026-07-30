@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Рабочие и конфиденциальные документы
+*.ods
+*.xlsx
+*.xls
+*.xlsm
+*.backup_before_fill.ods
+~$*
+
+# Редакторы и операционные системы
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

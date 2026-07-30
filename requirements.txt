@@ -1,0 +1,4 @@
+@'
+odfpy
+openpyxl
+'@ | Set-Content -LiteralPath "requirements.txt" -Encoding utf8
