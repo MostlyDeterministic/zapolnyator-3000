@@ -1,6 +1,6 @@
 # Заполнятор 3000
 
-![MostlyDeterministic](assets/branding/MD.png)
+![Главное окно](assets/screenshots/main-window.png)
 
 **Заполнятор 3000** (`Zapolnyator3000`) — Windows-инструмент для автоматического заполнения листа `Сигналы` в ODS-файле по данным из XLSX-файлов.
 
