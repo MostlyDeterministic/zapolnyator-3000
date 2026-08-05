@@ -154,8 +154,11 @@ XLSX-файлы должны содержать лист:
 ```text
 zapolnyator-3000/
 ├── assets/
-│   └── branding/
-│       └── MD.png
+│   ├── branding/
+│   │   └── MD.png
+│   └── screenshots/
+│       ├── main-window.png
+│       └── before-after.png
 ├── fill_signals_ods.py
 ├── run_zapolnyator_3000.cmd
 ├── run_fill_signals_ods.ps1
