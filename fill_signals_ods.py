@@ -8,6 +8,7 @@ import re
 import shutil
 import sys
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
@@ -21,15 +22,19 @@ SHEET_NAME_ODS = "Сигналы"
 SHEET_NAME_XLSX = "Печать"
 START_ROW = 5
 
-COL_ODS_MODULE_SLOT = "C"
-COL_ODS_BASKET = "E"
-COL_ODS_SOURCE_FILE = "J"
-COL_ODS_CHANNEL = "R"
-COL_ODS_SIGNAL_TYPE = "V"
-
-COL_ODS_TARGET_P = "S"
-COL_ODS_TARGET_R = "T"
-COL_ODS_TARGET_S = "U"
+# Имена маркеров третьей логической строки листа "Сигналы".
+# Позиции ODS определяются по содержимому маркеров, а не по буквам столбцов.
+ODS_HEADER_ROW = 3
+ODS_REQUIRED_MARKERS = (
+    "%mobPos%",       # Позиция модуля
+    "%rack%",         # Корзина
+    "%uso%",          # Шкаф
+    "%chanel%",       # Канал (написание маркера сохранено как в шаблоне)
+    "%!LinkType?%",   # Тип сигнала: idAI, idDI, idDO, idDiag...
+    "%XT%",           # Клеммник <- XLSX M
+    "%ID%",           # Идентификатор <- XLSX C
+    "%caption%",      # Наименование <- XLSX D
+)
 
 
 def eprint(*args: object) -> None:
@@ -214,6 +219,60 @@ def get_row_values(row: TableRow, max_col: int) -> List[str]:
     while len(values) < max_col:
         values.append("")
     return values
+
+
+def find_ods_columns_by_markers(rows: List[TableRow]) -> Dict[str, int]:
+    """Ищет необходимые поля ODS по маркерам третьей *логической* строки.
+
+    Возвращает номер столбца (1-based) для каждого обязательного маркера.
+    При отсутствии или повторе маркера прерывает обработку до сохранения ODS.
+    """
+    required = set(ODS_REQUIRED_MARKERS)
+    logical_row = 0
+
+    for row in rows:
+        row_repeat = int(row.getAttribute("numberrowsrepeated") or 1)
+        if logical_row < ODS_HEADER_ROW <= logical_row + row_repeat:
+            if row_repeat != 1:
+                raise RuntimeError(
+                    f"Строка маркеров ODS ({ODS_HEADER_ROW}) повторяется "
+                    f"{row_repeat} раз: невозможно однозначно определить столбцы."
+                )
+
+            positions: Dict[str, int] = {}
+            logical_col = 1
+            for node in row.childNodes:
+                qname = getattr(node, "qname", None)
+                if qname is None or qname[1] not in ("table-cell", "covered-table-cell"):
+                    continue
+
+                repeat = int(node.getAttribute("numbercolumnsrepeated") or 1)
+                marker = get_cell_text(node) if qname[1] == "table-cell" else ""
+                marker = marker.strip()
+
+                if marker in required:
+                    if repeat != 1 or marker in positions:
+                        raise RuntimeError(
+                            f"Маркер {marker!r} в строке {ODS_HEADER_ROW} "
+                            "ODS встречается неоднозначно (повтор или объединение)."
+                        )
+                    positions[marker] = logical_col
+                logical_col += repeat
+
+            missing = [marker for marker in ODS_REQUIRED_MARKERS if marker not in positions]
+            if missing:
+                raise RuntimeError(
+                    f"В строке {ODS_HEADER_ROW} листа {SHEET_NAME_ODS!r} "
+                    "отсутствуют обязательные маркеры: " + ", ".join(missing)
+                )
+            return positions
+
+        logical_row += row_repeat
+
+    raise RuntimeError(
+        f"В листе {SHEET_NAME_ODS!r} не найдена строка маркеров "
+        f"(логическая строка {ODS_HEADER_ROW})."
+    )
 
 
 def append_empty_cells_until(row: TableRow, target_col: int) -> None:
@@ -511,6 +570,40 @@ def collect_ods_modules(
     return ods_modules
 
 
+def create_timestamped_backup(ods_path: Path) -> Path:
+    """Сохранить уникальную копию ODS, не перезаписывая прошлые запуски.
+
+    Суффикс _001, _002 и далее используется, когда несколько запусков
+    начались в одну секунду. Режим xb защищает от коллизий имён.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    for number in range(10000):
+        collision_suffix = f"_{number:03d}" if number else ""
+        backup_path = ods_path.with_name(
+            f"{ods_path.stem}.backup_before_fill_{timestamp}"
+            f"{collision_suffix}{ods_path.suffix}"
+        )
+        # Эксклюзивное создание: существующие файлы никогда не затираются.
+        try:
+            destination = backup_path.open("xb")
+        except FileExistsError:
+            continue
+
+        try:
+            with destination:
+                with ods_path.open("rb") as source:
+                    shutil.copyfileobj(source, destination)
+            shutil.copystat(ods_path, backup_path)
+            return backup_path
+        except Exception:
+            # Сначала закрываем файл, затем удаляем неполную копию (Windows).
+            backup_path.unlink(missing_ok=True)
+            raise
+
+    raise RuntimeError("Не удалось подобрать уникальное имя резервной копии ODS")
+
+
 def fill_ods(ods_path: Path, create_backup: bool = True) -> Dict[str, object]:
     if not ods_path.exists():
         raise FileNotFoundError(f"ODS файл не найден: {ods_path}")
@@ -526,15 +619,16 @@ def fill_ods(ods_path: Path, create_backup: bool = True) -> Dict[str, object]:
 
     rows = sheet.getElementsByType(TableRow)
 
-    idx_c = col_to_index(COL_ODS_MODULE_SLOT)
-    idx_e = col_to_index(COL_ODS_BASKET)
-    idx_j = col_to_index(COL_ODS_SOURCE_FILE)
-    idx_q = col_to_index(COL_ODS_CHANNEL)
-    idx_t = col_to_index(COL_ODS_SIGNAL_TYPE)
+    ods_columns = find_ods_columns_by_markers(rows)
+    idx_c = ods_columns["%mobPos%"]
+    idx_e = ods_columns["%rack%"]
+    idx_j = ods_columns["%uso%"]
+    idx_q = ods_columns["%chanel%"]
+    idx_t = ods_columns["%!LinkType?%"]
 
-    idx_p = col_to_index(COL_ODS_TARGET_P)
-    idx_r = col_to_index(COL_ODS_TARGET_R)
-    idx_s = col_to_index(COL_ODS_TARGET_S)
+    idx_p = ods_columns["%XT%"]
+    idx_r = ods_columns["%ID%"]
+    idx_s = ods_columns["%caption%"]
 
     max_read_col = max(idx_c, idx_e, idx_j, idx_q, idx_t, idx_p, idx_r, idx_s)
 
@@ -626,9 +720,9 @@ def fill_ods(ods_path: Path, create_backup: bool = True) -> Dict[str, object]:
         stats["rows_filled"] += 1
 
     if create_backup:
-        backup_path = ods_path.with_name(f"{ods_path.stem}.backup_before_fill{ods_path.suffix}")
-        shutil.copy2(ods_path, backup_path)
+        backup_path = create_timestamped_backup(ods_path)
         stats["backup_created"] = 1
+        stats["backup_path"] = str(backup_path)
 
     doc.save(str(ods_path))
     stats["saved"] = 1
@@ -742,7 +836,7 @@ def main() -> int:
     if stats.get('duplicate_keys', 0):
         print(f"Дубликатов ключей в XLSX пропущено: {stats.get('duplicate_keys', 0)}")
     if stats.get('backup_created', 0):
-        print("Резервная копия создана рядом с ODS.")
+        print(f"Резервная копия: {stats['backup_path']}")
 
     return 0
 

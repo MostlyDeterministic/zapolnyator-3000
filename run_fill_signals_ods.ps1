@@ -579,7 +579,7 @@ try {
             -File `
             -Filter '*.ods' |
             Where-Object {
-                $_.Name -notlike '*.backup_before_fill.ods'
+                $_.Name -notlike '*.backup_before_fill*.ods'
             } |
             Sort-Object -Property Name
     )
@@ -649,7 +649,7 @@ try {
 
     Write-Info (
         "Готово. Проверьте ODS и резервную копию " +
-        "*.backup_before_fill.ods"
+        "*.backup_before_fill*.ods"
     )
 }
 catch {
